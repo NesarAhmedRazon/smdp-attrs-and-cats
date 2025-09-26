@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin Name: SMDP - Category Attribute Relations
+ * Plugin Name: SMDP: Cat><Att Relations
  * Description: Creates a DB table for mapping WooCommerce categories to attributes (and vice versa).
  * Version: 1.0.0
  * Author: Nesar
@@ -29,8 +29,11 @@ if (! class_exists('SMDP_Logger')) {
     require_once SMDP_AT_CAT_DIR . 'inc/logger.php';
 }
 
+
 add_action('woocommerce_init', 'smdpc_at_cat');
 function smdpc_at_cat()
 {
+    //var_dump('https://github.com/NesarAhmedRazon/smdp-attrs-and-cats');
     require_once SMDP_AT_CAT_DIR . 'inc/core.php';
+    require_once SMDP_AT_CAT_DIR . 'inc/attrs_to_product.php';
 }
