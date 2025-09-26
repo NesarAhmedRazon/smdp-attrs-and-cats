@@ -18,7 +18,7 @@ if (! defined('ABSPATH')) {
 
 /**
  * Get the logger instance (pass your plugin directory once)
- * $logger = SMDP_Logger::get_instance( SMDP_DIR );
+ * $logger = SMDP_Logger::get_instance( SMDP_AT_CAT_DIR );
  * 
  * ✅ Write a log entry
  * $logger->write( [
