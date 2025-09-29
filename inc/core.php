@@ -39,10 +39,12 @@ class SMDP_Category_Attribute_Relations {
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             category_id BIGINT(20) UNSIGNED NOT NULL,
             attribute_id BIGINT(20) UNSIGNED NOT NULL,
+            attribute_slug VARCHAR(255) DEFAULT NULL,
             PRIMARY KEY (id),
             UNIQUE KEY uniq_rel (category_id, attribute_id),
             KEY cat (category_id),
-            KEY attr (attribute_id)
+            KEY attr (attribute_id)            
+
         ) $charset_collate;";
 
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
@@ -69,20 +71,35 @@ class SMDP_Category_Attribute_Relations {
     /** Migration from old term meta */
     private function migrate_old_meta() {
         global $wpdb;
+        $logger = SMDP_Logger::get_instance( SMDP_AT_CAT_DIR );
 
         // Categories → old key: smdPicker_attrs_to_cat
         $categories = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false]);
         foreach ($categories as $cat) {
             $attr_ids = get_term_meta($cat->term_id, 'smdPicker_attrs_to_cat', true);
+            // get the attribute slug from the attribute ID
+            
+
+            
+
             if (!empty($attr_ids) && is_array($attr_ids)) {
                 foreach ($attr_ids as $attr_id) {
+                    $attr = wc_get_attribute($attr_id);
+                    
+                    $attr_slug = $attr ? preg_replace('/^pa_/', '', $attr->slug) : null;
+                    // if slug is empty, skip
+                    if (empty($attr_slug)) {
+                        continue;
+                    }
                     $wpdb->query(
                         $wpdb->prepare(
-                            "INSERT IGNORE INTO " . self::$table_name . " (category_id, attribute_id) VALUES (%d, %d)",
-                            $cat->term_id, intval($attr_id)
+                            "INSERT IGNORE INTO " . self::$table_name . " (category_id, attribute_id, attribute_slug) VALUES (%d, %d, %s)",
+                            intval($cat->term_id), intval($attr_id), $attr_slug
                         )
                     );
+                    
                 }
+                
             }
         }
 
@@ -92,17 +109,19 @@ class SMDP_Category_Attribute_Relations {
             foreach ($attributes as $attr) {
                 $taxonomy = wc_attribute_taxonomy_name($attr->attribute_name);
                 $attr_terms = get_terms(['taxonomy' => $taxonomy, 'hide_empty' => false]);
-
+                
                 if (empty($attr_terms)) continue;
+                $attr_slug = $attr->attribute_name;
 
                 foreach ($attr_terms as $attr_term) {
                     $cat_ids = get_term_meta($attr_term->term_id, 'smdPicker_cat_to_attr', true);
+                    
                     if (!empty($cat_ids) && is_array($cat_ids)) {
                         foreach ($cat_ids as $cat_id) {
                             $wpdb->query(
                                 $wpdb->prepare(
-                                    "INSERT IGNORE INTO " . self::$table_name . " (category_id, attribute_id) VALUES (%d, %d)",
-                                    intval($cat_id), intval($attr->attribute_id)
+                                    "INSERT IGNORE INTO " . self::$table_name . " (category_id, attribute_id, attribute_slug) VALUES (%d, %d, %s)",
+                                    intval($cat_id), intval($attr->attribute_id), $attr_slug
                                 )
                             );
                         }
@@ -158,10 +177,11 @@ class SMDP_Category_Attribute_Relations {
 
         if (!empty($_POST['smdp_attributes'])) {
             foreach ($_POST['smdp_attributes'] as $attr_id) {
+                $attr_slug = wc_get_attribute($attr_id)->slug ?? null;
                 $wpdb->query(
                     $wpdb->prepare(
-                        "INSERT IGNORE INTO " . self::$table_name . " (category_id, attribute_id) VALUES (%d, %d)",
-                        $term_id, intval($attr_id)
+                        "INSERT IGNORE INTO " . self::$table_name . " (category_id, attribute_id, attribute_slug) VALUES (%d, %d, %s)",
+                        $term_id, intval($attr_id), $attr_slug
                     )
                 );
             }
@@ -197,10 +217,11 @@ class SMDP_Category_Attribute_Relations {
 
         if (!empty($_POST['smdp_categories'])) {
             foreach ($_POST['smdp_categories'] as $cat_id) {
+                $attr_slug = wc_get_attribute($attribute_id)->slug ?? null;
                 $wpdb->query(
                     $wpdb->prepare(
-                        "INSERT IGNORE INTO " . self::$table_name . " (category_id, attribute_id) VALUES (%d, %d)",
-                        intval($cat_id), $attribute_id
+                        "INSERT IGNORE INTO " . self::$table_name . " (category_id, attribute_id, attribute_slug) VALUES (%d, %d, %s)",
+                        intval($cat_id), $attribute_id, $attr_slug
                     )
                 );
             }
@@ -312,8 +333,8 @@ class SMDP_Category_Attribute_Relations {
                 foreach ($attr_ids as $attr_id) {
                     $wpdb->query(
                         $wpdb->prepare(
-                            "INSERT IGNORE INTO " . self::$table_name . " (category_id, attribute_id) VALUES (%d, %d)",
-                            intval($cat_id), intval($attr_id)
+                            "INSERT IGNORE INTO " . self::$table_name . " (category_id, attribute_id, attribute_slug) VALUES (%d, %d, %s)",
+                            intval($cat_id), intval($attr_id), $attr_slug
                         )
                     );
                 }
