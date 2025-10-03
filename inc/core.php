@@ -191,9 +191,22 @@ class SMDP_Category_Attribute_Relations {
     /** Attribute Edit Form */
     public function attribute_edit_form($attribute) {
         $categories = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false]);
-        $saved = $this->get_categories_for_attribute($attribute->attribute_id);
-        ?>
-        <div class="form-field">
+
+    // Make sure $attribute is an object and has attribute_id
+    $attribute_id = null;
+    if (is_object($attribute) && isset($attribute->attribute_id)) {
+        $attribute_id = (int) $attribute->attribute_id;
+    } elseif (is_numeric($attribute)) {
+        $attribute_id = (int) $attribute; // sometimes passed directly as ID
+    }
+
+    $saved = [];
+    if ($attribute_id) {
+        $saved = $this->get_categories_for_attribute($attribute_id);
+    }
+
+    ?>
+    <div class="form-field">
             <label><?php _e('Assign Categories', 'smdp-textdomain'); ?></label>
             <ul>
                 <?php foreach ($categories as $cat): ?>
