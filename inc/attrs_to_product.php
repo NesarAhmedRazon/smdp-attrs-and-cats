@@ -31,7 +31,10 @@ class SMDP_Attrs_To_Product_By_Category {
         if (empty($product_cats)) {
             return;
         }
-
+        $logger->write( [
+            'start' => '--------------xxxxxxxxxxxxxxx----------------',
+            'post_id' => $post_id,
+        ] , 'info.log',true);
         // 2. Fetch mapped attributes from DB table
         $table = $wpdb->prefix . 'smdp_cat_attr_rel';
         $placeholders = implode(',', array_fill(0, count($product_cats), '%d'));
@@ -40,102 +43,122 @@ class SMDP_Attrs_To_Product_By_Category {
 
         $product_cat_attrs_slugs = array_map('sanitize_title', $wpdb->get_col($query)); // attribute slugs
 
+        
+
         if (empty($product_cat_attrs_slugs)) {
             return;
         }
 
         // 3. Merge with existing attributes (slugs only)
             $ex_attributes = $product->get_attributes() ?? [];
-
             $ex_attribute_slugs = [];
-            foreach ($ex_attributes as $attr) {
+
+            foreach ($ex_attributes as $key => $attr) {
                 if ($attr instanceof WC_Product_Attribute) {
-                    $attr_slug = preg_replace('/^pa_/', '', $attr->slug);   
-                    $ex_attribute_slugs[] = $attr_slug;
+                    // New-style WooCommerce attribute object
+                    $slug = preg_replace('/^pa_/', '', $attr->get_name());
+                    $ex_attribute_slugs[] = $slug;
+                } elseif (is_string($key)) {
+                    // Legacy array-style attributes
+                    $slug = preg_replace('/^pa_/', '', $key);
+                    $ex_attribute_slugs[] = $slug;
+                }               
+            }
+
+        
+        
+            $all_attr_slugs = array_unique(array_merge($product_cat_attrs_slugs, $ex_attribute_slugs));
+
+            // Remove empty or invalid slugs
+            $all_attr_slugs = array_values(array_filter($all_attr_slugs, function($slug) { 
+                return !empty($slug) && is_string($slug); 
+            }));
+
+            // 🧠 Build a map of all WooCommerce attributes (slug → id)
+            $attr_taxonomies = wc_get_attribute_taxonomies();
+            $attr_map = [];
+            foreach ($attr_taxonomies as $tax) {
+                $attr_map['pa_' . $tax->attribute_name] = (int) $tax->attribute_id;
+            }
+
+            // 4️⃣ Build attribute data
+            $all_attributes_data = [];
+            $term_name = '-'; // default placeholder
+
+            foreach ($all_attr_slugs as $attr_slug) {
+                $the_slug = 'pa_' . $attr_slug;
+                $attr_id  = $attr_map[$the_slug] ?? null;
+
+                if (!$attr_id) {
+                    continue; // skip non-existing attributes
                 }
-            }
 
-        
-        $all_attr_slugs = array_unique(array_merge($product_cat_attrs_slugs, $ex_attribute_slugs));
-        // remove empty or "" slug form the array
-        $all_attr_slugs = array_values(array_filter($all_attr_slugs, function($slug) { return !empty($slug) && is_string($slug); }));
+                $existing_attr_val = $product->get_attribute($the_slug);
 
-        // 4. Build attribute data
-        $all_attributes_data = [];
-        $term_name = '-'; // default placeholder
+                if (!$existing_attr_val) {
+                    $term_slug = $the_slug . '-unknown';
 
-        foreach ($all_attr_slugs as $attr_slug) {
-            $the_slug = 'pa_' . $attr_slug;
-            $attr_id = wc_attribute_taxonomy_id_by_name($the_slug);
-            if (!$attr_id) {
-                continue; // skip non-existing attributes
-            }
-            $existing_attr_val = $product->get_attribute($the_slug);
-                
-        
-
-            if (!$existing_attr_val) {
-                $term_slug = $the_slug . '-unknown';
-                // Create/find placeholder term
-                $term = get_term_by('name', $term_slug, $the_slug);
-                if (!$term) {
-                    $term = wp_insert_term($term_name, $the_slug, ['slug' => $term_slug]);
-                    if (is_wp_error($term)) {
-                        continue;
+                    // Create or get placeholder term
+                    $term = get_term_by('name', $term_slug, $the_slug);
+                    if (!$term) {
+                        $term = wp_insert_term($term_name, $the_slug, ['slug' => $term_slug]);
+                        if (is_wp_error($term)) {
+                            continue;
+                        }
+                        $term_name = $term_name; // keep default '-'
+                    } else {
+                        $term_name = $term->name;
                     }
-                    $term_name = $term['name'];
+
+                    $data = [
+                        'id'       => $attr_id,
+                        'taxonomy' => $the_slug,
+                        'options'  => [$term_name],
+                        'visible'  => true,
+                    ];
+
+                    $all_attributes_data[] = $data;
+
                 } else {
-                    $term_name = $term->term_name.'-x';
-
-                }
-
-                $data = [
-                    'id'       => $attr_id,
-                    'taxonomy' => $the_slug,
-                    'options'  => [$term_name],
-                    'visible'  => true,
-                ];
-
-                $all_attributes_data[] = $data;        
-
-
-            } else {
-                // Get existing terms
-                $terms = explode(',', $existing_attr_val);
-                $term_names = [];
-                foreach ($terms as $t) {
-                    $term_data = get_term_by('name', trim($t), $the_slug);
-                    if ($term_data) {
-                        $term_names[] = $term_data->$term_name;
-                    }
-                }
-
-                // // Match to existing WC_Product_Attribute if possible
-                $position = 0;
-                $ex_attr_obj = null;
-                foreach ($ex_attributes as $attr) {
-                    if ($attr instanceof WC_Product_Attribute) {
-                        $attr_slug_check = preg_replace('/^pa_/', '', $attr->slug);
-                        if ($attr_slug_check === $attr_slug) {
-                            $ex_attr_obj = $attr;
-                            break;
+                    // Get existing terms
+                    $terms = explode(',', $existing_attr_val);
+                    $term_names = [];
+                    foreach ($terms as $t) {
+                        $term_data = get_term_by('name', trim($t), $the_slug);
+                        if ($term_data) {
+                            $term_names[] = $term_data->name;
                         }
                     }
-                    $position++;
+
+                    // Match to existing WC_Product_Attribute if possible
+                    $position = 0;
+                    $ex_attr_obj = null;
+                    foreach ($ex_attributes as $attr) {
+                        if ($attr instanceof WC_Product_Attribute) {
+                            $attr_slug_check = preg_replace('/^pa_/', '', $attr->slug);
+                            if ($attr_slug_check === $attr_slug) {
+                                $ex_attr_obj = $attr;
+                                break;
+                            }
+                        }
+                        $position++;
+                    }
+
+                    $data = [
+                        'id'       => $attr_id,
+                        'taxonomy' => $the_slug,
+                        'options'  => $term_names,
+                        'position' => $ex_attr_obj ? $ex_attr_obj->get_position() : $position,
+                        'visible'  => $ex_attr_obj ? $ex_attr_obj->get_visible() : true,
+                    ];
+
+                    $all_attributes_data[] = $data;
                 }
+            }
 
-                $data = [
-                    'id'       => $attr_id,
-                    'taxonomy' => $the_slug,
-                    'options'  => $term_names,
-                    'position' => $ex_attr_obj ? $ex_attr_obj->get_position() : $position,
-                    'visible'  => $ex_attr_obj ? $ex_attr_obj->get_visible() : true,
-                ];
-                $all_attributes_data[] = $data;
-                
-                 
-        }
-
+            
+        
+        
         // 5. Convert to WC_Product_Attribute objects with ordering rules
         $attributes = [];
         $position = 0;
@@ -198,3 +221,21 @@ class SMDP_Attrs_To_Product_By_Category {
 }
 
 new SMDP_Attrs_To_Product_By_Category();
+
+
+function get_attributes_by_slugs($all_attr_slugs){
+    global $wpdb;
+    if (empty($all_attr_slugs)) {
+        return [];
+    }
+    // get the attributes ids from WooCommerce and return the array of ids
+    $placeholders = implode(',', array_fill(0, count($all_attr_slugs), '%s'));
+    $table = $wpdb->prefix . 'woocommerce_attribute_taxonomies';
+    $query = $wpdb->prepare("SELECT attribute_id, attribute_name FROM {$table} WHERE attribute_name IN ($placeholders)", $all_attr_slugs);
+    $results = $wpdb->get_results($query, OBJECT);
+    $attr_ids = [];
+    foreach ($results as $row) {
+        array_push($attr_ids, (int)$row->attribute_id);
+    }
+    return $attr_ids;
+}

@@ -101,15 +101,15 @@ if (! class_exists('SMDP_Logger')) {
          * @param string $file_name File name (default: log.json).
          * @return void
          */
-        public function write($data, $file_name = 'log.json')
+        public function write($data, $file_name = 'log.json', $clear = false)
         {
             $file_path = $this->log_dir . $file_name;
-            $logs      = [];
+            $logs = [];
 
-            // Load existing logs
-            if (file_exists($file_path)) {
+            // If clear = true → skip reading old logs (overwrite)
+            if (!$clear && file_exists($file_path)) {
                 $file_contents = file_get_contents($file_path);
-                $decoded       = json_decode($file_contents, true);
+                $decoded = json_decode($file_contents, true);
                 if (is_array($decoded)) {
                     $logs = $decoded;
                 }
@@ -123,10 +123,15 @@ if (! class_exists('SMDP_Logger')) {
 
             $json_data = wp_json_encode($logs, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 
+            // If $clear is true → overwrite file entirely
+            $write_mode = $clear ? 0 : FILE_APPEND;
+
+            // Always overwrite because we re-encoded full array
             if (file_put_contents($file_path, $json_data) === false) {
                 error_log("Failed to write to log file at: $file_path");
             }
         }
+
 
         /**
          * Read logs from a file.
@@ -164,51 +169,3 @@ if (! class_exists('SMDP_Logger')) {
     }
 }
 
-
-// Example usage of the logger to log all WordPress hooks
-// Set the path for the log file
-
-// Ensure the log file exists
-
-
-// Helper function to log messages
-function wp_log_hook($hook_name, $args = array()) {
-    $log_entry = "[" . date("Y-m-d H:i:s") . "] Hook Fired: " . $hook_name;
-    if (!empty($args)) {
-        $log_entry .= " | Args: " . json_encode($args);
-    }
-    $log_entry .= PHP_EOL;
-    $logger = SMDP_Logger::get_instance(SMDP_AT_CAT_DIR); // Using SMDP_AT_CAT_DIR as base directory
-    $logger->write( [
-        'hook' => $hook_name,
-        'args' => $args,
-    ] , 'hook-logs.txt');
-    // Also log to error_log for immediate visibility
-}
-
-// Log all actions
-add_filter('all', function($hook_name) {
-    $args = func_get_args();
-    // Remove the first argument which is the hook name itself from 'all' filter
-    array_shift($args);
-    wp_log_hook($hook_name, $args);
-});
-
-// To help monitor PHP errors as well
-add_action('shutdown', function() {
-    if ($error = error_get_last()) {
-        $log_entry = "[" . date("Y-m-d H:i:s") . "] PHP Error: " . json_encode($error) . PHP_EOL;
-        $logger = SMDP_Logger::get_instance(SMDP_AT_CAT_DIR); // Using SMDP_AT_CAT_DIR as base directory
-        $logger->write( [
-            'php_error' => $error,
-        ] , 'hook-logs.txt');
-        // Also log to error_log for immediate visibility
-    }
-});
-
-/*
-Usage:
-1. Activate this code as a plugin or add it to your theme's functions.php.
-2. All WordPress hooks and their arguments (if any) will be logged in hook-logs.txt under wp-content directory.
-3. Open the log file to see which hooks fired and when.
-*/
