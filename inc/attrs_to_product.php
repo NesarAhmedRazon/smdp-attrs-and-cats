@@ -31,10 +31,8 @@ class SMDP_Attrs_To_Product_By_Category {
         if (empty($product_cats)) {
             return;
         }
-        $logger->write( [
-            'start' => '--------------xxxxxxxxxxxxxxx----------------',
-            'post_id' => $post_id,
-        ] , 'info.log',true);
+        
+
         // 2. Fetch mapped attributes from DB table
         $table = $wpdb->prefix . 'smdp_cat_attr_rel';
         $placeholders = implode(',', array_fill(0, count($product_cats), '%d'));
@@ -50,33 +48,37 @@ class SMDP_Attrs_To_Product_By_Category {
         }
 
         // 3. Merge with existing attributes (slugs only)
-            $ex_attributes = $product->get_attributes() ?? [];
-            $ex_attribute_slugs = [];
+        $ex_attributes = $product->get_attributes() ?? [];
+        $ex_attribute_slugs = [];
 
-            foreach ($ex_attributes as $key => $attr) {
-                if ($attr instanceof WC_Product_Attribute) {
+        foreach ($ex_attributes as $key => $attr) {
+            if ($attr instanceof WC_Product_Attribute) {
                     // New-style WooCommerce attribute object
                     $slug = preg_replace('/^pa_/', '', $attr->get_name());
                     $ex_attribute_slugs[] = $slug;
-                } elseif (is_string($key)) {
+            } elseif (is_string($key)) {
                     // Legacy array-style attributes
                     $slug = preg_replace('/^pa_/', '', $key);
                     $ex_attribute_slugs[] = $slug;
-                }               
-            }
+            }               
+        }
 
         
         
-            $all_attr_slugs = array_unique(array_merge($product_cat_attrs_slugs, $ex_attribute_slugs));
+        $all_attr_slugs = array_unique(array_merge($product_cat_attrs_slugs, $ex_attribute_slugs));
 
             // Remove empty or invalid slugs
-            $all_attr_slugs = array_values(array_filter($all_attr_slugs, function($slug) { 
-                return !empty($slug) && is_string($slug); 
-            }));
+        $all_attr_slugs = array_values(
+            array_filter(
+                $all_attr_slugs, function($slug) { 
+                    return !empty($slug) && is_string($slug); 
+                }
+            )
+        );
 
             // 🧠 Build a map of all WooCommerce attributes (slug → id)
-            $attr_taxonomies = wc_get_attribute_taxonomies();
-            $attr_map = [];
+        $attr_taxonomies = wc_get_attribute_taxonomies();
+        $attr_map = [];
             foreach ($attr_taxonomies as $tax) {
                 $attr_map['pa_' . $tax->attribute_name] = (int) $tax->attribute_id;
             }
@@ -218,7 +220,7 @@ class SMDP_Attrs_To_Product_By_Category {
     }
 }
     
-}
+
 
 new SMDP_Attrs_To_Product_By_Category();
 
